@@ -6,6 +6,13 @@
 #include <atomic>
 #include <memory>
 
+#include <cstdio>
+#define Log(...)                                                  \
+  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
+          __FUNCTION__);                                          \
+  fprintf(stderr, __VA_ARGS__);                                   \
+  fprintf(stderr, "\n")
+
 // An estimate count that must be greater or equal than the number of threads
 // that can concurrently access the queue, you need to specify this number
 #ifdef LOCKFREE_QUEUE_MAX_THREADS
@@ -18,11 +25,19 @@ const int kEstimateHazardPointerCount = 64;
 template <typename T>
 class LockFreeQueue {
  public:
-  LockFreeQueue() : head_(new Node), tail_(head_.load()), size_(0) {}
+  LockFreeQueue() : head_(new Node), tail_(head_.load()), size_(0) {
+    for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
+      hazard_pointers_[i] =
+          std::move(std::shared_ptr<typename Reclaimer<Node>::HazardPointer>(
+              new typename Reclaimer<Node>::HazardPointer()));
+    }
+  }
 
   ~LockFreeQueue() {
-    while (nullptr != Pop())
-      ;
+    Log("%d >>>>>>", size());
+    while (nullptr != Pop()) {
+      Log("pop");
+    }
     delete head_.load();
   }
 
@@ -37,7 +52,7 @@ class LockFreeQueue {
   }
 
   std::shared_ptr<T> Pop();
-  size_t Size() const { return size_; }
+  size_t size() const { return size_.load(); }
 
  private:
   void InternalPush(std::unique_ptr<T>& new_data);
@@ -51,7 +66,10 @@ class LockFreeQueue {
   std::atomic<Node*> head_;
   std::atomic<Node*> tail_;
   std::atomic<size_t> size_;
-  typename Reclaimer<Node>::HazardPointer
+  // We use the array of shared_ptr of HazardPointer to avoid
+  // it release before thread_local static Reclaimer(see
+  // Reclaimer::GetInstane())
+  std::shared_ptr<typename Reclaimer<Node>::HazardPointer>
       hazard_pointers_[kEstimateHazardPointerCount];
 };
 
@@ -79,6 +97,7 @@ void LockFreeQueue<T>::InternalPush(std::unique_ptr<T>& new_data) {
   old_tail->next = new_tail;
   tail_.store(new_tail);
   // At this point, other Push thread can continue
+  size_.fetch_add(1);
 
   reclaimer.MarkHazard(nullptr);
   new_data.release();
@@ -104,6 +123,8 @@ std::shared_ptr<T> LockFreeQueue<T>::Pop() {
       return nullptr;
     }
   } while (!head_.compare_exchange_weak(old_head, old_head->next));
+  size_.fetch_sub(1);
+
   // So this thread is the only thread that can
   // delete old_head or push old_head to gc list
   reclaimer.MarkHazard(nullptr);

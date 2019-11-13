@@ -5,16 +5,27 @@
 #include <cassert>
 #include <thread>
 
+#include <cstdio>
+#define Log(...)                                                  \
+  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
+          __FUNCTION__);                                          \
+  fprintf(stderr, __VA_ARGS__);                                   \
+  fprintf(stderr, "\n")
+
 template <typename T>
 class Reclaimer {
  public:
   struct HazardPointer {
+    HazardPointer() : ptr(nullptr) {}
+    ~HazardPointer() {}
+
     std::atomic_flag flag;
     void* ptr;
   };
 
-  static Reclaimer& GetInstance(HazardPointer* const hazard_pointers,
-                                const int count) {
+  static Reclaimer& GetInstance(
+      std::shared_ptr<Reclaimer<T>::HazardPointer>* const hazard_pointers,
+      const int count) {
     // Each thread has its own reclaimer
     thread_local static Reclaimer reclaimer(hazard_pointers, count);
     return reclaimer;
@@ -32,7 +43,7 @@ class Reclaimer {
   // Check if the ptr is hazard
   bool Hazard(void* const ptr) {
     for (int i = 0; i < hazard_pointer_count_; ++i) {
-      if (hazard_pointers_[i].ptr == ptr) {
+      if (hazard_pointers_[i]->ptr == ptr) {
         return true;
       }
     }
@@ -85,16 +96,20 @@ class Reclaimer {
     ReclaimNode* head;
   };
 
-  Reclaimer(HazardPointer* const hazard_pointers, const int count)
+  Reclaimer(std::shared_ptr<Reclaimer<T>::HazardPointer>* const hazard_pointers,
+            const int count)
       : hazard_pointer_count_(count), hazard_pointers_(hazard_pointers) {
     hazard_pointer_ = nullptr;
     for (int i = 0; i < count; ++i) {
-      if (!hazard_pointers[i].flag.test_and_set()) {
-        hazard_pointer_ = &hazard_pointers[i];
+      if (!hazard_pointers[i]->flag.test_and_set()) {
+        hazard_pointer_ = hazard_pointers[i];
+        assert(nullptr == hazard_pointer_->ptr);
         break;
       }
     }
-    assert(hazard_pointer_ != nullptr);
+
+    // If assertion satisfies, you should increase kEstimateHazardPointerCount
+    assert(nullptr != hazard_pointer_);
   }
 
   ~Reclaimer() {
@@ -114,13 +129,14 @@ class Reclaimer {
       }
       ReclaimNode* temp = p;
       p = p->next;
+      Log("  ~Reclaimer 11111");
       delete temp;
     }
   }
 
   const int hazard_pointer_count_;
-  const HazardPointer* const hazard_pointers_;
-  HazardPointer* hazard_pointer_;
+  std::shared_ptr<Reclaimer<T>::HazardPointer> hazard_pointer_;
+  const std::shared_ptr<Reclaimer<T>::HazardPointer>* const hazard_pointers_;
   ReclaimList reclaim_list;
 };
 
