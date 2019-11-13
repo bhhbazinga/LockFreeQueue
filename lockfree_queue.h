@@ -34,10 +34,8 @@ class LockFreeQueue {
   }
 
   ~LockFreeQueue() {
-    Log("%d >>>>>>", size());
-    while (nullptr != Pop()) {
-      Log("pop");
-    }
+    while (nullptr != Pop())
+      ;
     delete head_.load();
   }
 

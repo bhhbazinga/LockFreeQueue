@@ -129,7 +129,6 @@ class Reclaimer {
       }
       ReclaimNode* temp = p;
       p = p->next;
-      Log("  ~Reclaimer 11111");
       delete temp;
     }
   }
