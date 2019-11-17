@@ -63,7 +63,6 @@ void LockFreeQueue<T>::InternalPush(std::unique_ptr<T>& new_data) {
   Reclaimer<Node>& reclaimer = Reclaimer<Node>::GetInstance(
       hazard_pointers_, kEstimateHazardPointerCount);
   Node* new_tail = new Node();
-
   Node* old_tail = tail_.load();
   Node* temp = old_tail;
   T* expected_data = nullptr;
@@ -93,10 +92,11 @@ std::shared_ptr<T> LockFreeQueue<T>::Pop() {
   Reclaimer<Node>& reclaimer = Reclaimer<Node>::GetInstance(
       hazard_pointers_, kEstimateHazardPointerCount);
   Node* old_head = head_.load();
+  Node* temp = old_head;
   do {
-    Node* temp = old_head;
     do {
       // Make sure the Hazard pointer we set is head
+      temp = old_head;
       reclaimer.MarkHazard(old_head);
       old_head = head_.load();
     } while (temp != old_head);
