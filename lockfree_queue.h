@@ -62,7 +62,7 @@ class LockFreeQueue {
   std::atomic<size_t> size_;
   // We use the array of shared_ptr of HazardPointer to avoid
   // it release before thread_local static Reclaimer(see
-  // Reclaimer::GetInstane())
+  // Reclaimer::GetInstance())
   std::shared_ptr<typename Reclaimer<Node>::HazardPointer>
       hazard_pointers_[kEstimateHazardPointerCount];
 };
