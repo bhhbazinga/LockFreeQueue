@@ -5,13 +5,6 @@
 #include <cassert>
 #include <thread>
 
-#include <cstdio>
-#define Log(...)                                                  \
-  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
-          __FUNCTION__);                                          \
-  fprintf(stderr, __VA_ARGS__);                                   \
-  fprintf(stderr, "\n")
-
 template <typename T>
 class Reclaimer {
  public:

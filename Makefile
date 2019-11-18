@@ -5,6 +5,8 @@ SRC = test.cc
 OBJ = $(SRC:.cc=.o)
 EXEC = test
 LBLIBS = -latomic -lpthread
+DEFS = -DLOCKFREE_QUEUE_MAX_THREADS=5
+CXXFLAGS += $(DEFS)
 
 all: $(EXEC)
 

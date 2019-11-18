@@ -4,19 +4,16 @@
 #include "reclaimer.h"
 
 #include <atomic>
-#include <cassert>
-#include <cstdio>
 #include <memory>
 
-#include <cstdio>
-#define Log(...)                                                  \
-  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
-          __FUNCTION__);                                          \
-  fprintf(stderr, __VA_ARGS__);                                   \
-  fprintf(stderr, "\n")
-
 // An estimate count that must be greater or equal than the number of threads
-const int kEstimateHazardPointerCount = 8;
+// that can concurrently access the queue, you need to specify this number
+#ifdef LOCKFREE_QUEUE_MAX_THREADS
+const int kEstimateHazardPointerCount = LOCKFREE_QUEUE_MAX_THREADS;
+#else
+// defalut max number of threads
+const int kEstimateHazardPointerCount = 64;
+#endif
 
 template <typename T>
 class LockFreeQueue {

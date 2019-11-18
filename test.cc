@@ -1,4 +1,12 @@
+#include <string>
 #include "lockfree_queue.h"
+
+#include <cstdio>
+#define Log(...)                                                  \
+  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
+          __FUNCTION__);                                          \
+  fprintf(stderr, __VA_ARGS__);                                   \
+  fprintf(stderr, "\n")
 
 class TestElement {
  public:
@@ -14,6 +22,8 @@ class TestElement {
   ~TestElement() {
     // Log("TestElement deinit %p", this);
   }
+
+ private:
 };
 
 int main(int argc, char const* argv[]) {
@@ -36,13 +46,13 @@ int main(int argc, char const* argv[]) {
   });
   std::thread t3([&] {
     for (int i = 0; i < 10000; ++i) {
-      lfqueue.Push(TestElement());
+      lfqueue.Pop();
     }
     Log("t3 exit");
   });
   std::thread t4([&] {
     for (int i = 0; i < 10000; ++i) {
-      lfqueue.Push(TestElement());
+      lfqueue.Pop();
     }
     Log("t4 exit");
   });
