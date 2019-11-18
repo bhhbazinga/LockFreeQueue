@@ -79,12 +79,12 @@ void LockFreeQueue<T>::InternalEnqueue(std::unique_ptr<T>& new_data) {
   do {
     do {
       temp = old_tail;
-      // Make sure the Hazard pointer we set is tail
+      // Make sure the hazard pointer we set is tail
       reclaimer.MarkHazard(old_tail);
       old_tail = tail_.load(std::memory_order_relaxed);
     } while (temp != old_tail);
     expected_data = nullptr;
-    // Because we set the Hazard pointer, so the old_tail can't be nullptr
+    // Because we set the hazard pointer, so the old_tail can't be nullptr
   } while (!old_tail->data.compare_exchange_strong(
       expected_data, new_data.get(), std::memory_order_relaxed,
       std::memory_order_relaxed));
@@ -107,12 +107,12 @@ std::shared_ptr<T> LockFreeQueue<T>::Dequeue() {
   Node* temp = old_head;
   do {
     do {
-      // Make sure the Hazard pointer we set is head
+      // Make sure the hazard pointer we set is head
       temp = old_head;
       reclaimer.MarkHazard(old_head);
       old_head = head_.load(std::memory_order_relaxed);
     } while (temp != old_head);
-    // Because we set the Hazard pointer, so the old_head can't be nullptr
+    // Because we set the hazard pointer, so the old_head can't be nullptr
     if (tail_.load(std::memory_order_acquire) == old_head) {
       // Because old_head is dummy node, the queue is empty
       reclaimer.MarkHazard(nullptr);
@@ -124,7 +124,7 @@ std::shared_ptr<T> LockFreeQueue<T>::Dequeue() {
   size_.fetch_sub(1, std::memory_order_release);
 
   // So this thread is the only thread that can
-  // delete old_head or Enqueue old_head to gc list
+  // delete old_head or enqueue old_head to gc list
   reclaimer.MarkHazard(nullptr);
 
   std::shared_ptr<T> res(old_head->data.load(std::memory_order_relaxed));
