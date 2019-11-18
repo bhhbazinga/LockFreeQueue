@@ -25,7 +25,10 @@ const int kEstimateHazardPointerCount = 64;
 template <typename T>
 class LockFreeQueue {
  public:
-  LockFreeQueue() : head_(new Node), tail_(head_.load()), size_(0) {
+  LockFreeQueue()
+      : head_(new Node),
+        tail_(head_.load(std::memory_order_seq_cst)),
+        size_(0) {
     for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
       hazard_pointers_[i] =
           std::move(std::shared_ptr<typename Reclaimer<Node>::HazardPointer>(
@@ -34,26 +37,26 @@ class LockFreeQueue {
   }
 
   ~LockFreeQueue() {
-    while (nullptr != Pop())
+    while (nullptr != Dequeue())
       ;
-    delete head_.load();
+    delete head_.load(std::memory_order_seq_cst);
   }
 
-  void Push(const T& data) {
+  void Enqueue(const T& data) {
     std::unique_ptr<T> new_data = std::make_unique<T>(data);
-    InternalPush(new_data);
+    InternalEnqueue(new_data);
   };
 
-  void Push(T&& data) {
+  void Enqueue(T&& data) {
     std::unique_ptr<T> new_data = std::make_unique<T>(std::move(data));
-    InternalPush(new_data);
+    InternalEnqueue(new_data);
   }
 
-  std::shared_ptr<T> Pop();
-  size_t size() const { return size_.load(); }
+  std::shared_ptr<T> Dequeue();
+  size_t size() const { return size_.load(std::memory_order_seq_cst); }
 
  private:
-  void InternalPush(std::unique_ptr<T>& new_data);
+  void InternalEnqueue(std::unique_ptr<T>& new_data);
 
   struct Node {
     std::atomic<T*> data;
@@ -72,11 +75,12 @@ class LockFreeQueue {
 };
 
 template <typename T>
-void LockFreeQueue<T>::InternalPush(std::unique_ptr<T>& new_data) {
+void LockFreeQueue<T>::InternalEnqueue(std::unique_ptr<T>& new_data) {
+  Log("enque:%d", *new_data);
   Reclaimer<Node>& reclaimer = Reclaimer<Node>::GetInstance(
       hazard_pointers_, kEstimateHazardPointerCount);
   Node* new_tail = new Node();
-  Node* old_tail = tail_.load();
+  Node* old_tail = tail_.load(std::memory_order_seq_cst);
   Node* temp = old_tail;
   T* expected_data = nullptr;
   do {
@@ -84,35 +88,36 @@ void LockFreeQueue<T>::InternalPush(std::unique_ptr<T>& new_data) {
       temp = old_tail;
       // Make sure the Hazard pointer we set is tail
       reclaimer.MarkHazard(old_tail);
-      old_tail = tail_.load();
+      old_tail = tail_.load(std::memory_order_seq_cst);
     } while (temp != old_tail);
     expected_data = nullptr;
     // Because we set the Hazard pointer, so the old_tail can't be nullptr
-  } while (
-      !old_tail->data.compare_exchange_strong(expected_data, new_data.get()));
+  } while (!old_tail->data.compare_exchange_strong(
+      expected_data, new_data.get(), std::memory_order_seq_cst,
+      std::memory_order_seq_cst));
 
-  // At this point, other Push thread can not continue
+  // At this point, other enqueue thread can not continue
   old_tail->next = new_tail;
-  tail_.store(new_tail);
-  // At this point, other Push thread can continue
-  size_.fetch_add(1);
+  tail_.store(new_tail, std::memory_order_seq_cst);
+  // At this point, other enqueue thread can continue
 
+  size_.fetch_add(1, std::memory_order_seq_cst);
   reclaimer.MarkHazard(nullptr);
   new_data.release();
 }
 
 template <typename T>
-std::shared_ptr<T> LockFreeQueue<T>::Pop() {
+std::shared_ptr<T> LockFreeQueue<T>::Dequeue() {
   Reclaimer<Node>& reclaimer = Reclaimer<Node>::GetInstance(
       hazard_pointers_, kEstimateHazardPointerCount);
-  Node* old_head = head_.load();
+  Node* old_head = head_.load(std::memory_order_seq_cst);
   Node* temp = old_head;
   do {
     do {
       // Make sure the Hazard pointer we set is head
       temp = old_head;
       reclaimer.MarkHazard(old_head);
-      old_head = head_.load();
+      old_head = head_.load(std::memory_order_seq_cst);
     } while (temp != old_head);
     // Because we set the Hazard pointer, so the old_head can't be nullptr
     if (nullptr == old_head->next) {
@@ -120,14 +125,16 @@ std::shared_ptr<T> LockFreeQueue<T>::Pop() {
       reclaimer.MarkHazard(nullptr);
       return nullptr;
     }
-  } while (!head_.compare_exchange_weak(old_head, old_head->next));
-  size_.fetch_sub(1);
+  } while (!head_.compare_exchange_strong(old_head, old_head->next,
+                                          std::memory_order_seq_cst,
+                                          std::memory_order_seq_cst));
+  size_.fetch_sub(1, std::memory_order_seq_cst);
 
   // So this thread is the only thread that can
-  // delete old_head or push old_head to gc list
+  // delete old_head or Enqueue old_head to gc list
   reclaimer.MarkHazard(nullptr);
 
-  std::shared_ptr<T> res(old_head->data.load());
+  std::shared_ptr<T> res(old_head->data.load(std::memory_order_acquire));
   if (reclaimer.Hazard(old_head)) {
     reclaimer.ReclaimLater(old_head);
   } else {
