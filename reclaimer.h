@@ -6,13 +6,6 @@
 #include <functional>
 #include <thread>
 
-#include <cstdio>
-#define Log(...)                                                  \
-  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
-          __FUNCTION__);                                          \
-  fprintf(stderr, __VA_ARGS__);                                   \
-  fprintf(stderr, "\n")
-
 // An estimate count that must be greater or equal than the max number of
 // threads, you need to specify this number
 #ifdef MAX_THREADS

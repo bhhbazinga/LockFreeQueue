@@ -5,13 +5,6 @@
 #include <iostream>
 #include <queue>
 
-#include <cstdio>
-#define Log(...)                                                  \
-  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
-          __FUNCTION__);                                          \
-  fprintf(stderr, __VA_ARGS__);                                   \
-  fprintf(stderr, "\n")
-
 const int kMaxElements = 1000000;
 
 int main(int argc, char const* argv[]) {
@@ -38,12 +31,15 @@ int main(int argc, char const* argv[]) {
     }
   });
 
+  std::atomic<int> cnt = 0;
   std::thread t3([&] {
     while (!start) {
       std::this_thread::yield();
     }
-    for (int i = 0; i < kMaxElements / 2; ++i) {
-      q.Dequeue();
+    for (; cnt.load(std::memory_order_relaxed) < kMaxElements;) {
+      if (nullptr != q.Dequeue()) {
+        cnt.fetch_add(1, std::memory_order_relaxed);
+      }
     }
   });
 
@@ -51,8 +47,10 @@ int main(int argc, char const* argv[]) {
     while (!start) {
       std::this_thread::yield();
     }
-    for (int i = 0; i < kMaxElements / 2; ++i) {
-      q.Dequeue();
+    for (; cnt.load(std::memory_order_relaxed) < kMaxElements;) {
+      if (nullptr != q.Dequeue()) {
+        cnt.fetch_add(1, std::memory_order_relaxed);
+      }
     }
   });
 
@@ -64,13 +62,13 @@ int main(int argc, char const* argv[]) {
   t4.join();
   auto t2_ = std::chrono::steady_clock::now();
 
-
-  std::cout << "t2-t1="
-            << std::chrono::duration_cast<std::chrono::milliseconds>(t2_ -
-            t1_)
+  assert(q.size() == 0);
+  std::cout << "100K elements enqueue and dequeue, timespan="
+            << std::chrono::duration_cast<std::chrono::milliseconds>(t2_ - t1_)
                    .count()
-            << ","
-            << "left=" << q.size() << "\n";
+            << "ms"
+            << " ,"
+            << "number of harzard pointer=" << MAX_THREADS << "\n";
 
   return 0;
 }
