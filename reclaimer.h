@@ -25,7 +25,9 @@ struct HazardPointer {
   HazardPointer& operator=(HazardPointer&& other) = delete;
 
   std::atomic_flag flag;
-  void* ptr;
+  // We must use atomic pointer to ensure that the modification of pointer
+  // is visible to other threads
+  std::atomic<void*> ptr;
 };
 
 static HazardPointer g_hazard_pointers[kEstimateHazardPointerCount];
@@ -45,12 +47,12 @@ class Reclaimer {
 
   // Mark ptr as an hazard pointer
   // If ptr == nullptr then mask last ptr(that is hazard) as no hazard
-  void MarkHazard(void* const ptr) { hazard_pointer_->ptr = ptr; }
+  void MarkHazard(void* const ptr) { hazard_pointer_->ptr.store(ptr); }
 
   // Check if the ptr is hazard
   bool Hazard(void* const ptr) {
     for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
-      if (g_hazard_pointers[i].ptr == ptr) {
+      if (g_hazard_pointers[i].ptr.load() == ptr) {
         return true;
       }
     }
@@ -144,11 +146,10 @@ class Reclaimer {
   struct ReclaimPool {
     ReclaimPool() : head(new ReclaimNode()) {}
     ~ReclaimPool() {
-      ReclaimNode* node = head;
       ReclaimNode* temp;
-      while (node) {
-        temp = node;
-        node = node->next;
+      while (head) {
+        temp = head;
+        head = head->next;
         delete temp;
       }
     }
@@ -156,6 +157,8 @@ class Reclaimer {
     void Push(ReclaimNode* node) {
       node->next = head;
       head = node;
+
+      // delete node;
     }
 
     ReclaimNode* Pop() {
@@ -167,6 +170,8 @@ class Reclaimer {
       head = head->next;
       temp->next = nullptr;
       return temp;
+
+      // return new ReclaimNode();
     }
 
     ReclaimNode* head;

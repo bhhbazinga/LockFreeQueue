@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -pedantic -std=c++17 -g -fsanitize=address -fno-omit-frame-pointer -fsanitize=leak
+CXXFLAGS = -Wall -Wextra -pedantic -std=c++17 -g -O2 -fsanitize=address -fsanitize=leak
 
 SRC = test.cc
 OBJ = $(SRC:.cc=.o)
