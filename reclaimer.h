@@ -11,6 +11,10 @@ class Reclaimer {
   struct HazardPointer {
     HazardPointer() : ptr(nullptr) {}
     ~HazardPointer() {}
+    HazardPointer(const HazardPointer& other) = delete;
+    HazardPointer(HazardPointer&& other) = delete;
+    HazardPointer& operator=(const HazardPointer& other) = delete;
+    HazardPointer& operator=(HazardPointer&& other) = delete;
 
     std::atomic_flag flag;
     void* ptr;
