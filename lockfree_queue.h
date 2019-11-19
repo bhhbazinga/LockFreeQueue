@@ -6,14 +6,12 @@
 #include <atomic>
 #include <memory>
 
-// An estimate count that must be greater or equal than the number of threads
-// that can concurrently access the queue, you need to specify this number
-#ifdef LOCKFREE_QUEUE_MAX_THREADS
-const int kEstimateHazardPointerCount = LOCKFREE_QUEUE_MAX_THREADS;
-#else
-// defalut max number of threads
-const int kEstimateHazardPointerCount = 64;
-#endif
+#include <cstdio>
+#define Log(...)                                                  \
+  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
+          __FUNCTION__);                                          \
+  fprintf(stderr, __VA_ARGS__);                                   \
+  fprintf(stderr, "\n")
 
 template <typename T>
 class LockFreeQueue {
@@ -21,13 +19,7 @@ class LockFreeQueue {
   LockFreeQueue()
       : head_(new Node),
         tail_(head_.load(std::memory_order_relaxed)),
-        size_(0) {
-    for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
-      hazard_pointers_[i] =
-          std::move(std::shared_ptr<typename Reclaimer<Node>::HazardPointer>(
-              new typename Reclaimer<Node>::HazardPointer()));
-    }
-  }
+        size_(0) {}
 
   ~LockFreeQueue() {
     while (nullptr != Dequeue())
@@ -46,32 +38,27 @@ class LockFreeQueue {
   }
 
   std::shared_ptr<T> Dequeue();
-  size_t size() const { return size_.load(std::memory_order_acquire); }
+  size_t size() const { return size_.load(std::memory_order_relaxed); }
 
  private:
   void InternalEnqueue(std::unique_ptr<T>& new_data);
 
   struct Node {
-    std::atomic<T*> data;
-    Node* next;
     Node() : data(nullptr), next(nullptr) {}
     ~Node() {}
+
+    std::atomic<T*> data;
+    Node* next;
   };
+
   std::atomic<Node*> head_;
   std::atomic<Node*> tail_;
   std::atomic<size_t> size_;
-  // We use the array of shared_ptr of HazardPointer to avoid
-  // it release before thread_local static Reclaimer(see
-  // Reclaimer::GetInstance())
-  std::shared_ptr<typename Reclaimer<Node>::HazardPointer>
-      hazard_pointers_[kEstimateHazardPointerCount];
 };
 
 template <typename T>
 void LockFreeQueue<T>::InternalEnqueue(std::unique_ptr<T>& new_data) {
-
-  Reclaimer<Node>& reclaimer = Reclaimer<Node>::GetInstance(
-      hazard_pointers_, kEstimateHazardPointerCount);
+  Reclaimer& reclaimer = Reclaimer::GetInstance();
   Node* new_tail = new Node();
   Node* old_tail = tail_.load(std::memory_order_relaxed);
   Node* temp = old_tail;
@@ -94,15 +81,14 @@ void LockFreeQueue<T>::InternalEnqueue(std::unique_ptr<T>& new_data) {
   tail_.store(new_tail, std::memory_order_release);
   // At this point, other enqueue thread can continue
 
-  size_.fetch_add(1, std::memory_order_release);
+  size_.fetch_add(1, std::memory_order_relaxed);
   reclaimer.MarkHazard(nullptr);
   new_data.release();
 }
 
 template <typename T>
 std::shared_ptr<T> LockFreeQueue<T>::Dequeue() {
-  Reclaimer<Node>& reclaimer = Reclaimer<Node>::GetInstance(
-      hazard_pointers_, kEstimateHazardPointerCount);
+  Reclaimer& reclaimer = Reclaimer::GetInstance();
   Node* old_head = head_.load(std::memory_order_relaxed);
   Node* temp = old_head;
   do {
@@ -121,7 +107,7 @@ std::shared_ptr<T> LockFreeQueue<T>::Dequeue() {
   } while (!head_.compare_exchange_strong(old_head, old_head->next,
                                           std::memory_order_relaxed,
                                           std::memory_order_relaxed));
-  size_.fetch_sub(1, std::memory_order_release);
+  size_.fetch_sub(1, std::memory_order_relaxed);
 
   // So this thread is the only thread that can
   // delete old_head or enqueue old_head to gc list
@@ -129,7 +115,7 @@ std::shared_ptr<T> LockFreeQueue<T>::Dequeue() {
 
   std::shared_ptr<T> res(old_head->data.load(std::memory_order_relaxed));
   if (reclaimer.Hazard(old_head)) {
-    reclaimer.ReclaimLater(old_head);
+    reclaimer.ReclaimLater(old_head, [old_head] { delete old_head; });
   } else {
     delete old_head;
   }

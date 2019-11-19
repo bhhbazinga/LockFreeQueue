@@ -3,28 +3,45 @@
 
 #include <atomic>
 #include <cassert>
+#include <functional>
 #include <thread>
 
-template <typename T>
+#include <cstdio>
+#define Log(...)                                                  \
+  fprintf(stderr, "[thread-%lu-%s]:", std::this_thread::get_id(), \
+          __FUNCTION__);                                          \
+  fprintf(stderr, __VA_ARGS__);                                   \
+  fprintf(stderr, "\n")
+
+// An estimate count that must be greater or equal than the max number of
+// threads, you need to specify this number
+#ifdef MAX_THREADS
+const int kEstimateHazardPointerCount = MAX_THREADS;
+#else
+// defalut max number of threads
+const int kEstimateHazardPointerCount = 64;
+#endif
+
+struct HazardPointer {
+  HazardPointer() : ptr(nullptr) {}
+  ~HazardPointer() {}
+
+  HazardPointer(const HazardPointer& other) = delete;
+  HazardPointer(HazardPointer&& other) = delete;
+  HazardPointer& operator=(const HazardPointer& other) = delete;
+  HazardPointer& operator=(HazardPointer&& other) = delete;
+
+  std::atomic_flag flag;
+  void* ptr;
+};
+
+static HazardPointer g_hazard_pointers[kEstimateHazardPointerCount];
+
 class Reclaimer {
  public:
-  struct HazardPointer {
-    HazardPointer() : ptr(nullptr) {}
-    ~HazardPointer() {}
-    HazardPointer(const HazardPointer& other) = delete;
-    HazardPointer(HazardPointer&& other) = delete;
-    HazardPointer& operator=(const HazardPointer& other) = delete;
-    HazardPointer& operator=(HazardPointer&& other) = delete;
-
-    std::atomic_flag flag;
-    void* ptr;
-  };
-
-  static Reclaimer& GetInstance(
-      std::shared_ptr<Reclaimer<T>::HazardPointer>* const hazard_pointers,
-      const int count) {
+  static Reclaimer& GetInstance() {
     // Each thread has its own reclaimer
-    thread_local static Reclaimer reclaimer(hazard_pointers, count);
+    thread_local static Reclaimer reclaimer;
     return reclaimer;
   }
 
@@ -39,8 +56,8 @@ class Reclaimer {
 
   // Check if the ptr is hazard
   bool Hazard(void* const ptr) {
-    for (int i = 0; i < hazard_pointer_count_; ++i) {
-      if (hazard_pointers_[i]->ptr == ptr) {
+    for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
+      if (g_hazard_pointers[i].ptr == ptr) {
         return true;
       }
     }
@@ -48,24 +65,28 @@ class Reclaimer {
   }
 
   // If ptr is hazard then reclaim it later
-  void ReclaimLater(void* const ptr) {
-    ReclaimNode*& old_head = reclaim_list.head;
+  void ReclaimLater(void* const ptr, std::function<void(void)>&& func) {
+    ReclaimNode*& old_head = reclaim_list_.head;
     old_head->ptr = ptr;
+    old_head->delete_func = std::move(func);
 
-    ReclaimNode* new_head = new ReclaimNode();
+    ReclaimNode* new_head = reclaim_pool_.Pop();
     new_head->next = old_head;
     old_head = new_head;
+    ++reclaim_list_.size;
   }
 
   // Try to reclaim all no hazard pointers
   void ReclaimNoHazardPointer() {
-    ReclaimNode* pre = reclaim_list.head;
+    ReclaimNode* pre = reclaim_list_.head;
     ReclaimNode* p = pre->next;
     while (p) {
       if (!Hazard(p->ptr)) {
         ReclaimNode* temp = p;
         p = pre->next = p->next;
-        delete temp;
+        temp->delete_func();
+        reclaim_pool_.Push(temp);
+        --reclaim_list_.size;
       } else {
         pre = p;
         p = p->next;
@@ -74,32 +95,10 @@ class Reclaimer {
   }
 
  private:
-  struct ReclaimNode {
-    ReclaimNode() : ptr(nullptr), next(nullptr) {}
-    ~ReclaimNode() {
-      if (ptr != nullptr) {
-        delete reinterpret_cast<T*>(ptr);
-      }
-    }
-
-    void* ptr;
-    ReclaimNode* next;
-  };
-
-  struct ReclaimList {
-    ReclaimList() : head(new ReclaimNode) {}
-    ~ReclaimList() { delete head; }
-
-    ReclaimNode* head;
-  };
-
-  Reclaimer(std::shared_ptr<Reclaimer<T>::HazardPointer>* const hazard_pointers,
-            const int count)
-      : hazard_pointer_count_(count), hazard_pointers_(hazard_pointers) {
-    hazard_pointer_ = nullptr;
-    for (int i = 0; i < count; ++i) {
-      if (!hazard_pointers[i]->flag.test_and_set()) {
-        hazard_pointer_ = hazard_pointers[i];
+  Reclaimer() : hazard_pointer_(nullptr) {
+    for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
+      if (!g_hazard_pointers[i].flag.test_and_set()) {
+        hazard_pointer_ = &g_hazard_pointers[i];
         assert(nullptr == hazard_pointer_->ptr);
         break;
       }
@@ -117,7 +116,7 @@ class Reclaimer {
     hazard_pointer_->flag.clear();
 
     // 2.reclaim all no hazard pointers
-    ReclaimNode* p = reclaim_list.head->next;
+    ReclaimNode* p = reclaim_list_.head->next;
     while (p) {
       // Wait until p->ptr is no hazard
       // Maybe less efficient?
@@ -126,14 +125,62 @@ class Reclaimer {
       }
       ReclaimNode* temp = p;
       p = p->next;
+      temp->delete_func();
       delete temp;
     }
   }
 
-  const int hazard_pointer_count_;
-  std::shared_ptr<Reclaimer<T>::HazardPointer> hazard_pointer_;
-  const std::shared_ptr<Reclaimer<T>::HazardPointer>* const hazard_pointers_;
-  ReclaimList reclaim_list;
-};
+  struct ReclaimNode {
+    ReclaimNode() : ptr(nullptr), next(nullptr), delete_func(nullptr) {}
+    ~ReclaimNode() {}
 
+    void* ptr;
+    ReclaimNode* next;
+    std::function<void(void)> delete_func;
+  };
+
+  struct ReclaimList {
+    ReclaimList() : head(new ReclaimNode()), size(0) {}
+    ~ReclaimList() { delete head; }
+
+    ReclaimNode* head;
+    size_t size;
+  };
+
+  // Reuse ReclaimNode
+  struct ReclaimPool {
+    ReclaimPool() : head(new ReclaimNode()) {}
+    ~ReclaimPool() {
+      ReclaimNode* node = head;
+      ReclaimNode* temp;
+      while (node) {
+        temp = node;
+        node = node->next;
+        delete temp;
+      }
+    }
+
+    void Push(ReclaimNode* node) {
+      node->next = head;
+      head = node;
+    }
+
+    ReclaimNode* Pop() {
+      if (nullptr == head->next) {
+        return new ReclaimNode();
+      }
+
+      ReclaimNode* temp = head;
+      head = head->next;
+      temp->next = nullptr;
+      return temp;
+    }
+
+    ReclaimNode* head;
+  };
+
+  HazardPointer* hazard_pointer_;
+  ReclaimList reclaim_list_;
+  ReclaimPool reclaim_pool_;
+};
 #endif  // RECLAIMER_H

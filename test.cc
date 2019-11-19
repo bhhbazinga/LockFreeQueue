@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdio>
 #include <iostream>
+#include <queue>
 
 #include <cstdio>
 #define Log(...)                                                  \
@@ -19,7 +20,6 @@ int main(int argc, char const* argv[]) {
 
   LockFreeQueue<int> q;
   std::atomic<bool> start(false);
-
   std::thread t1([&] {
     while (!start) {
       std::this_thread::yield();
@@ -64,10 +64,13 @@ int main(int argc, char const* argv[]) {
   t4.join();
   auto t2_ = std::chrono::steady_clock::now();
 
+
   std::cout << "t2-t1="
-            << std::chrono::duration_cast<std::chrono::milliseconds>(t2_ - t1_)
+            << std::chrono::duration_cast<std::chrono::milliseconds>(t2_ -
+            t1_)
                    .count()
             << ","
             << "left=" << q.size() << "\n";
+
   return 0;
 }
