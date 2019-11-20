@@ -175,7 +175,7 @@ int main(int argc, char const* argv[]) {
       TestConcurrentEnqueue();
       TestConcurrentDequeue();
       TestConcurrentEnqueueAndDequeue();
-      // std::cout << "\n";
+      std::cout << "\n";
     }
   }
 
