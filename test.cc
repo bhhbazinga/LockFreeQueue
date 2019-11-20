@@ -169,7 +169,7 @@ int main(int argc, char const* argv[]) {
   elements2timespan[100000] = timespan2;
   elements2timespan[1000000] = timespan3;
 
-  for (int i = 0; i < 10000; ++i) {
+  for (int i = 0; i < 10; ++i) {
     for (int j = 0; j < 3; ++j) {
       maxElements = elements[j];
       TestConcurrentEnqueue();
