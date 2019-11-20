@@ -47,12 +47,16 @@ class Reclaimer {
 
   // Mark ptr as an hazard pointer
   // If ptr == nullptr then mask last ptr(that is hazard) as no hazard
-  void MarkHazard(void* const ptr) { hazard_pointer_->ptr.store(ptr); }
+  // TODO:Try to optimize memory order
+  void MarkHazard(void* const ptr) {
+    hazard_pointer_->ptr.store(ptr, std::memory_order_seq_cst);
+  }
 
   // Check if the ptr is hazard
   bool Hazard(void* const ptr) {
     for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
-      if (g_hazard_pointers[i].ptr.load() == ptr) {
+      // TODO:Try to optimize memory order
+      if (g_hazard_pointers[i].ptr.load(std::memory_order_seq_cst) == ptr) {
         return true;
       }
     }
@@ -60,7 +64,7 @@ class Reclaimer {
   }
 
   // If ptr is hazard then reclaim it later
-  void ReclaimLater(void* const ptr, std::function<void(void)>&& func) {
+  void ReclaimLater(void* const ptr, std::function<void(void*)>&& func) {
     ReclaimNode*& old_head = reclaim_list_.head;
     old_head->ptr = ptr;
     old_head->delete_func = std::move(func);
@@ -79,7 +83,7 @@ class Reclaimer {
       if (!Hazard(p->ptr)) {
         ReclaimNode* temp = p;
         p = pre->next = p->next;
-        temp->delete_func();
+        temp->delete_func(temp->ptr);
         reclaim_pool_.Push(temp);
         --reclaim_list_.size;
       } else {
@@ -120,7 +124,7 @@ class Reclaimer {
       }
       ReclaimNode* temp = p;
       p = p->next;
-      temp->delete_func();
+      temp->delete_func(temp->ptr);
       delete temp;
     }
   }
@@ -131,7 +135,7 @@ class Reclaimer {
 
     void* ptr;
     ReclaimNode* next;
-    std::function<void(void)> delete_func;
+    std::function<void(void*)> delete_func;
   };
 
   struct ReclaimList {

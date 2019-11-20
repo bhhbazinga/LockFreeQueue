@@ -11,7 +11,7 @@ std::atomic<int> cnt = 0;
 std::atomic<bool> start = false;
 std::unordered_map<int, int*> elements2timespan;
 
-auto enqueue_func = [&](int divide) {
+auto enqueue_func = [](int divide) {
   while (!start) {
     std::this_thread::yield();
   }
@@ -20,12 +20,13 @@ auto enqueue_func = [&](int divide) {
   }
 };
 
-auto dequeue_func = [&] {
+auto dequeue_func = [] {
   while (!start) {
     std::this_thread::yield();
   }
+  int x;
   for (; cnt.load(std::memory_order_relaxed) < maxElements;) {
-    if (nullptr != q.Dequeue()) {
+    if (q.Dequeue(x)) {
       cnt.fetch_add(1, std::memory_order_relaxed);
     }
   }
@@ -112,11 +113,51 @@ void TestConcurrentEnqueueAndDequeue() {
   start = false;
 }
 
+std::unordered_map<int, int> element2count1;
+std::unordered_map<int, int> element2count2;
+
+auto dequeue_func_with_count = [](std::unordered_map<int, int>& element2count) {
+  while (!start) {
+    std::this_thread::yield();
+  }
+  int x;
+  for (; cnt.load(std::memory_order_relaxed) < maxElements;) {
+    if (q.Dequeue(x)) {
+      cnt.fetch_add(1, std::memory_order_relaxed);
+      ++element2count[x];
+    }
+  }
+};
+void TestCorrectness() {
+  for (int i = 0; i < maxElements / 2; ++i) {
+    element2count1[i] = 0;
+    element2count2[i] = 0;
+  }
+
+  maxElements = 1000000;
+  std::thread t1(enqueue_func, 2);
+  std::thread t2(enqueue_func, 2);
+  std::thread t3(dequeue_func_with_count, std::ref(element2count1));
+  std::thread t4(dequeue_func_with_count, std::ref(element2count2));
+  cnt = 0;
+  start = true;
+
+  t1.join();
+  t2.join();
+  t3.join();
+  t4.join();
+
+  assert(static_cast<int>(q.size()) == 0 && cnt == maxElements);
+  for (int i = 0; i < maxElements / 2; ++i) {
+    assert(element2count1[i] + element2count2[i] == 2);
+  }
+}
+
 int main(int argc, char const* argv[]) {
   (void)argc;
   (void)argv;
 
-  std::cout << "Benchmark with " << MAX_THREADS << " hazard pointers:"
+  std::cout << "Benchmark with " << MAX_THREADS << " hazard threads:"
             << "\n";
 
   int elements[] = {10000, 100000, 1000000};
@@ -128,13 +169,13 @@ int main(int argc, char const* argv[]) {
   elements2timespan[100000] = timespan2;
   elements2timespan[1000000] = timespan3;
 
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 10000; ++i) {
     for (int j = 0; j < 3; ++j) {
       maxElements = elements[j];
       TestConcurrentEnqueue();
       TestConcurrentDequeue();
       TestConcurrentEnqueueAndDequeue();
-      std::cout << "\n";
+      // std::cout << "\n";
     }
   }
 
@@ -157,6 +198,8 @@ int main(int argc, char const* argv[]) {
               << "\n";
     std::cout << "\n";
   }
+
+  TestCorrectness();
 
   return 0;
 }
