@@ -18,7 +18,8 @@ c++11实现的基于风险指针的轻量级无锁队列。
   
 The above data was tested on my i5-7500 cpu with gcc -O3.
 
-The first and scecond column I started 4 threads to enqueue concurrently and dequeue concurrently, the third column I started 2 threads to enqueue and 2 threads to dequeue concurrently, each loop 10 times to calculate the time consumption.\
+The first and scecond column I started 4 threads to enqueue concurrently and dequeue concurrently, the third column I started 2 threads to enqueue and 2 threads to dequeue concurrently, \
+each loop 10 times to calculate the time consumption.\
 See also [test](test.cc).
 ## Build
 ```
