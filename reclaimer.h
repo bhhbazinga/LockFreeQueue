@@ -72,7 +72,6 @@ class Reclaimer {
     ReclaimNode* new_head = reclaim_pool_.Pop();
     new_head->next = old_head;
     old_head = new_head;
-    ++reclaim_list_.size;
   }
 
   // Try to reclaim all no hazard pointers
@@ -85,7 +84,6 @@ class Reclaimer {
         p = pre->next = p->next;
         temp->delete_func(temp->ptr);
         reclaim_pool_.Push(temp);
-        --reclaim_list_.size;
       } else {
         pre = p;
         p = p->next;
@@ -139,11 +137,10 @@ class Reclaimer {
   };
 
   struct ReclaimList {
-    ReclaimList() : head(new ReclaimNode()), size(0) {}
+    ReclaimList() : head(new ReclaimNode()) {}
     ~ReclaimList() { delete head; }
 
     ReclaimNode* head;
-    size_t size;
   };
 
   // Reuse ReclaimNode
