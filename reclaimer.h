@@ -47,8 +47,8 @@ class Reclaimer {
 
   // Mark ptr as an hazard pointer
   // If ptr == nullptr then mask last ptr(that is hazard) as no hazard
-  // TODO:Try to optimize memory order
   void MarkHazard(void* const ptr) {
+  // TODO:Try to optimize memory order
     hazard_pointer_->ptr.store(ptr, std::memory_order_seq_cst);
   }
 

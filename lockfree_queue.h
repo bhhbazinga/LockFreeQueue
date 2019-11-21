@@ -21,6 +21,11 @@ class LockFreeQueue {
     delete head_.load(std::memory_order_relaxed);
   }
 
+  LockFreeQueue(const LockFreeQueue&) = delete;
+  LockFreeQueue(LockFreeQueue&&) = delete;
+  LockFreeQueue& operator=(const LockFreeQueue& other) = delete;
+  LockFreeQueue& operator=(LockFreeQueue&& other) = delete;
+
   void Enqueue(const T& data) {
     T* data_ptr = new T(data);
     InternalEnqueue(data_ptr);
@@ -35,6 +40,20 @@ class LockFreeQueue {
   size_t size() const { return size_.load(std::memory_order_relaxed); }
 
  private:
+  struct Node;
+  bool TryInsertNewTail(Node* old_tail, Node* new_tail) {
+    Node* null_ptr = nullptr;
+    if (old_tail->next.compare_exchange_strong(null_ptr, new_tail,
+                                               std::memory_order_relaxed,
+                                               std::memory_order_relaxed)) {
+      tail_.store(new_tail, std::memory_order_release);
+      size_.fetch_add(1, std::memory_order_relaxed);
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   void InternalEnqueue(T* data_ptr);
 
   struct Node {
@@ -42,7 +61,7 @@ class LockFreeQueue {
     ~Node() {}
 
     std::atomic<T*> data;
-    Node* next;
+    std::atomic<Node*> next;
   };
 
   std::atomic<Node*> head_;
@@ -51,33 +70,39 @@ class LockFreeQueue {
 };
 
 template <typename T>
-//std::unique_ptr<T>& new_data
+// std::unique_ptr<T>& new_data
 void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
   Reclaimer& reclaimer = Reclaimer::GetInstance();
   Node* new_tail = new Node();
   Node* old_tail = tail_.load(std::memory_order_relaxed);
   Node* temp;
-  T* expected_data = nullptr;
-  do {
+  for (;;) {
     do {
       temp = old_tail;
       // Make sure the hazard pointer we set is tail
       reclaimer.MarkHazard(old_tail);
       old_tail = tail_.load(std::memory_order_acquire);
     } while (temp != old_tail);
-    expected_data = nullptr;
     // Because we set the hazard pointer, so the old_tail can't be delete
-  } while (!old_tail->data.compare_exchange_strong(
-      expected_data, data_ptr, std::memory_order_relaxed,
-      std::memory_order_relaxed));
-
-  // At this point, other enqueue thread can not continue
-  old_tail->next = new_tail;
-  tail_.store(new_tail, std::memory_order_release);
-  // At this point, other enqueue thread can continue
-
-  size_.fetch_add(1, std::memory_order_relaxed);
-  reclaimer.MarkHazard(nullptr);
+    T* null_ptr = nullptr;
+    if (old_tail->data.compare_exchange_strong(null_ptr, data_ptr,
+                                               std::memory_order_relaxed,
+                                               std::memory_order_relaxed)) {
+      if (!TryInsertNewTail(old_tail, new_tail)) {
+        // Other help thread already insert tail
+        delete new_tail;
+      }
+      reclaimer.MarkHazard(nullptr);
+      return;
+    } else {
+      // If CAS failed,
+      // help another thread to finish enqueueing
+      if (TryInsertNewTail(old_tail, new_tail)) {
+        // Help success, so allocate new one
+        new_tail = new Node();
+      }
+    }
+  }
 }
 
 template <typename T>
@@ -98,9 +123,9 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
       reclaimer.MarkHazard(nullptr);
       return false;
     }
-  } while (!head_.compare_exchange_strong(old_head, old_head->next,
-                                          std::memory_order_relaxed,
-                                          std::memory_order_relaxed));
+  } while (!head_.compare_exchange_strong(
+      old_head, old_head->next.load(std::memory_order_relaxed),
+      std::memory_order_relaxed, std::memory_order_relaxed));
   size_.fetch_sub(1, std::memory_order_relaxed);
 
   // So this thread is the only thread that can
