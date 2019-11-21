@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -pedantic -std=c++17 -g -O3
+CXXFLAGS = -Wall -Wextra -pedantic -std=c++11 -g -O3
 #-fsanitize=thread
 #-fsanitize=address -fsanitize=leak 
 SRC = test.cc

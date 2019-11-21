@@ -7,8 +7,8 @@
 
 int maxElements = 1000000;
 LockFreeQueue<int> q;
-std::atomic<int> cnt = 0;
-std::atomic<bool> start = false;
+std::atomic<int> cnt(0);
+std::atomic<bool> start(false);
 std::unordered_map<int, int*> elements2timespan;
 
 auto enqueue_func = [](int divide) {
