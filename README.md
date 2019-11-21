@@ -10,7 +10,7 @@ c++11实现的基于风险指针的轻量级无锁队列。
   * Dynamically add and delete nodes(performance bottlneck). Or you can simply implement a thread-safe memory pool, e.g. by thread_local   storage identifier.
 ## Benchmark
 
-  Elements      | Enqueue     | Dequeue     | Enqueue & Dequeue|
+  Magnitude     | Enqueue     | Dequeue     | Enqueue & Dequeue|
   :-----------  | :-----------| :-----------| :-----------------
   10K           | 1.8ms       | 1.4ms       | 2.6ms
   100K          | 33.6ms      | 32.3ms      | 38.6ms
