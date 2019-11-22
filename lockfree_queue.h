@@ -129,13 +129,12 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
   size_.fetch_sub(1, std::memory_order_relaxed);
 
   // So this thread is the only thread that can
-  // delete old_head or enqueue old_head to gc list
+  // delete old_head or push old_head to gc list
   reclaimer.MarkHazard(nullptr);
 
   T* data_ptr = old_head->data.load(std::memory_order_relaxed);
   data = std::move(*data_ptr);
   delete data_ptr;
-  // std::shared_ptr<T> res(old_head->data.load(std::memory_order_relaxed));
   if (reclaimer.Hazard(old_head)) {
     reclaimer.ReclaimLater(old_head,
                            [](void* p) { delete reinterpret_cast<Node*>(p); });
