@@ -17,7 +17,8 @@ c++11实现的基于风险指针的轻量级无锁队列。
   100K          | 33.6ms      | 32.3ms      | 38.6ms
   1000K         | 209.2ms     | 185.1ms     | 299.3ms
   
-The above data was tested on my i5-7500 cpu with gcc -O3.
+The above data was tested on my i5-7500 cpu with gcc -O3.\
+You can also compare the tested data with [BlockingQueue](https://github.com/bhhbazinga/BlockingQueue) which is implemented by mutex.
 
 The data of first and second column was obtained by starting 4 threads to enqueue concurrently and dequeue concurrently, the data of third column was obtained by starting 2 threads to enqueue and 2 threads to dequeue concurrently, each looped 10 times to calculate the average time consumption.
 See also [test](test.cc).
