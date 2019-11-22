@@ -32,3 +32,6 @@ void Enqueue(T&& data);
 bool Dequeue(T& data);
 size_t size() const;
 ```
+## Reference
+[Lock-Free Data Structures with Hazard Pointers](https://www.drdobbs.com/lock-free-data-structures-with-hazard-po/184401890)\
+[C++ Concurrency in Action, Second Edition](https://chenxiaowei.gitbook.io/c-concurrency-in-action-second-edition-2019/)
