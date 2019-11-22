@@ -48,7 +48,7 @@ class Reclaimer {
   // Mark ptr as an hazard pointer
   // If ptr == nullptr then mask last ptr(that is hazard) as no hazard
   void MarkHazard(void* const ptr) {
-  // TODO:Try to optimize memory order
+    // TODO:Try to optimize memory order
     hazard_pointer_->ptr.store(ptr, std::memory_order_seq_cst);
   }
 
@@ -101,7 +101,7 @@ class Reclaimer {
       }
     }
 
-    // If assertion satisfies, you should increase kEstimateHazardPointerCount
+    // If assertion fired, you should increase kEstimateHazardPointerCount
     assert(nullptr != hazard_pointer_);
   }
 
