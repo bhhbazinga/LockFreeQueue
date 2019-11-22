@@ -6,8 +6,9 @@ c++11实现的基于风险指针的轻量级无锁队列。
   * Thread-safe and Lock-free. 
   * Hazard pointer.
   * Inter thread helping.
-  * You can customize the maximum number of threads you need to support.
-  * Dynamically add and delete nodes(performance bottlneck). Or you can simply implement a thread-safe memory pool, e.g. by thread_local   storage identifier.
+  * Support Multi-producer & Multi-consumer
+  * You can customize the maximum number of threads you want.
+  * Dynamically allocate nodes(performance bottlneck). Or you can simply implement a thread-safe memory pool, e.g. by thread_local   storage identifier.
 ## Benchmark
 
   Magnitude     | Enqueue     | Dequeue     | Enqueue & Dequeue|
