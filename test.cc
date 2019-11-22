@@ -1,7 +1,6 @@
 #include "lockfree_queue.h"
 
 #include <chrono>
-#include <cstdio>
 #include <iostream>
 #include <unordered_map>
 
