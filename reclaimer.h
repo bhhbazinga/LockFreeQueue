@@ -32,7 +32,7 @@ struct HazardPointerList {
   HazardPointerList() : head(new HazardPointer()) {}
   ~HazardPointerList() {
     // HazardPointerList destruct when program exit
-    HazardPointer* p = head.load(std::memory_order_relaxed);
+    HazardPointer* p = head.load(std::memory_order_acquire);
     while (p) {
       HazardPointer* temp = p;
       p = p->next;
@@ -189,8 +189,6 @@ class Reclaimer {
     void Push(ReclaimNode* node) {
       node->next = head;
       head = node;
-
-      // delete node;
     }
 
     ReclaimNode* Pop() {
@@ -202,8 +200,6 @@ class Reclaimer {
       head = head->next;
       temp->next = nullptr;
       return temp;
-
-      // return new ReclaimNode();
     }
 
     ReclaimNode* head;
