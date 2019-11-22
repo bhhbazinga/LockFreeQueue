@@ -3,23 +3,28 @@
 #include <chrono>
 #include <iostream>
 #include <unordered_map>
+#include <vector>
 
-int maxElements = 1000000;
+const int kMaxThreads = 8;
+static_assert((kMaxThreads & (kMaxThreads - 1)) == 0,
+              "Make sure kMaxThreads == 2^n");
+
+int maxElements;
 LockFreeQueue<int> q;
 std::atomic<int> cnt(0);
 std::atomic<bool> start(false);
 std::unordered_map<int, int*> elements2timespan;
 
-auto enqueue_func = [](int divide) {
+void onEnqueue(int divide) {
   while (!start) {
     std::this_thread::yield();
   }
   for (int i = 0; i < maxElements / divide; ++i) {
     q.Enqueue(i);
   }
-};
+}
 
-auto dequeue_func = [] {
+void onDequeue() {
   while (!start) {
     std::this_thread::yield();
   }
@@ -29,20 +34,19 @@ auto dequeue_func = [] {
       cnt.fetch_add(1, std::memory_order_relaxed);
     }
   }
-};
+}
 
 void TestConcurrentEnqueue() {
-  std::thread t1(enqueue_func, 4);
-  std::thread t2(enqueue_func, 4);
-  std::thread t3(enqueue_func, 4);
-  std::thread t4(enqueue_func, 4);
+  std::vector<std::thread> threads;
+  for (int i = 0; i < kMaxThreads; ++i) {
+    threads.push_back(std::thread(onEnqueue, kMaxThreads));
+  }
 
   start = true;
   auto t1_ = std::chrono::steady_clock::now();
-  t1.join();
-  t2.join();
-  t3.join();
-  t4.join();
+  for (int i = 0; i < kMaxThreads; ++i) {
+    threads[i].join();
+  }
   auto t2_ = std::chrono::steady_clock::now();
 
   assert(static_cast<int>(q.size()) == maxElements);
@@ -56,19 +60,17 @@ void TestConcurrentEnqueue() {
 }
 
 void TestConcurrentDequeue() {
-  std::thread t1(dequeue_func);
-  std::thread t2(dequeue_func);
-  std::thread t3(dequeue_func);
-  std::thread t4(dequeue_func);
+  std::vector<std::thread> threads;
+  for (int i = 0; i < kMaxThreads; ++i) {
+    threads.push_back(std::thread(onDequeue));
+  }
 
   cnt = 0;
   start = true;
-
   auto t1_ = std::chrono::steady_clock::now();
-  t1.join();
-  t2.join();
-  t3.join();
-  t4.join();
+  for (int i = 0; i < kMaxThreads; ++i) {
+    threads[i].join();
+  }
   auto t2_ = std::chrono::steady_clock::now();
 
   assert(static_cast<int>(q.size()) == 0 && cnt == maxElements);
@@ -84,19 +86,25 @@ void TestConcurrentDequeue() {
 }
 
 void TestConcurrentEnqueueAndDequeue() {
-  std::thread t1(enqueue_func, 2);
-  std::thread t2(enqueue_func, 2);
-  std::thread t3(dequeue_func);
-  std::thread t4(dequeue_func);
+  std::vector<std::thread> enqueue_threads;
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    enqueue_threads.push_back(std::thread(onEnqueue, kMaxThreads / 2));
+  }
+
+  std::vector<std::thread> dequeue_threads;
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    dequeue_threads.push_back(std::thread(onDequeue));
+  }
 
   cnt = 0;
   start = true;
-
   auto t1_ = std::chrono::steady_clock::now();
-  t1.join();
-  t2.join();
-  t3.join();
-  t4.join();
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    enqueue_threads[i].join();
+  }
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    dequeue_threads[i].join();
+  }
   auto t2_ = std::chrono::steady_clock::now();
 
   assert(static_cast<int>(q.size()) == 0 && cnt == maxElements);
@@ -112,10 +120,8 @@ void TestConcurrentEnqueueAndDequeue() {
   start = false;
 }
 
-std::unordered_map<int, int> element2count1;
-std::unordered_map<int, int> element2count2;
 
-auto dequeue_func_with_count = [](std::unordered_map<int, int>& element2count) {
+auto onDequeue_with_count = [](std::unordered_map<int, int>& element2count) {
   while (!start) {
     std::this_thread::yield();
   }
@@ -127,28 +133,47 @@ auto dequeue_func_with_count = [](std::unordered_map<int, int>& element2count) {
     }
   }
 };
+
+std::unordered_map<int, int> element2count[kMaxThreads / 2];
+
 void TestCorrectness() {
-  for (int i = 0; i < maxElements / 2; ++i) {
-    element2count1[i] = 0;
-    element2count2[i] = 0;
+  maxElements = 1000000;
+  assert(maxElements % kMaxThreads == 0);
+
+  for (int i = 0; i < maxElements / kMaxThreads; ++i) {
+    for (int j = 0; j < kMaxThreads / 2; ++j) {
+      element2count[j][i] = 0;
+    }
   }
 
-  maxElements = 1000000;
-  std::thread t1(enqueue_func, 2);
-  std::thread t2(enqueue_func, 2);
-  std::thread t3(dequeue_func_with_count, std::ref(element2count1));
-  std::thread t4(dequeue_func_with_count, std::ref(element2count2));
+  std::vector<std::thread> enqueue_threads;
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    enqueue_threads.push_back(
+        std::thread(onEnqueue, kMaxThreads / 2));
+  }
+
+  std::vector<std::thread> dequeue_threads;
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    dequeue_threads.push_back(
+        std::thread(onDequeue_with_count, std::ref(element2count[i])));
+  }
+
   cnt = 0;
   start = true;
-
-  t1.join();
-  t2.join();
-  t3.join();
-  t4.join();
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    enqueue_threads[i].join();
+  }
+  for (int i = 0; i < kMaxThreads / 2; ++i) {
+    dequeue_threads[i].join();
+  }
 
   assert(static_cast<int>(q.size()) == 0 && cnt == maxElements);
-  for (int i = 0; i < maxElements / 2; ++i) {
-    assert(element2count1[i] + element2count2[i] == 2);
+  for (int i = 0; i < maxElements / kMaxThreads; ++i) {
+    int sum = 0;
+    for (int j = 0; j < kMaxThreads / 2; ++j) {
+      sum += element2count[j][i];
+    }
+    assert(sum == kMaxThreads / 2);
   }
 }
 
