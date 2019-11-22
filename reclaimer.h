@@ -43,27 +43,7 @@ struct HazardPointerList {
   std::atomic<HazardPointer*> head;
 };
 
-// If you have a large number of threads, consider increasing this number
-const int kHashTableSize = 37;
-// An simple Lock-free hash table used to speed up the check of whether
-// a pointer is hazard (void* => HazardPointer*)
-struct HazardPointerMap {
-  std::atomic<HazardPointer*> hashTable[kHashTableSize];
-  void Insert(void* ptr, HazardPointer* hazard_pointer) {
-
-  }
-
-  bool Find(void* ptr) {
-
-  }
-
-  void Delete() {
-
-  }
-};
-
 static HazardPointerList g_hazard_pointer_list;
-static HazardPointerMap g_hazard_pointer_map;
 
 class Reclaimer {
  public:
