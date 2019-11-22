@@ -3,20 +3,17 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstdio>
 #include <functional>
 #include <thread>
+#include <unordered_set>
 
-// An estimate count that must be greater or equal than the max number of
-// threads, you need to specify this number
-#ifdef MAX_THREADS
-const int kEstimateHazardPointerCount = MAX_THREADS;
-#else
-// defalut max number of threads
-const int kEstimateHazardPointerCount = 64;
-#endif
+#define Log(...)                \
+  fprintf(stderr, __VA_ARGS__); \
+  fprintf(stderr, "\n")
 
 struct HazardPointer {
-  HazardPointer() : ptr(nullptr) {}
+  HazardPointer() : ptr(nullptr), next(nullptr) {}
   ~HazardPointer() {}
 
   HazardPointer(const HazardPointer& other) = delete;
@@ -28,9 +25,45 @@ struct HazardPointer {
   // We must use atomic pointer to ensure that the modification of pointer
   // is visible to other threads
   std::atomic<void*> ptr;
+  HazardPointer* next;
 };
 
-static HazardPointer g_hazard_pointers[kEstimateHazardPointerCount];
+struct HazardPointerList {
+  HazardPointerList() : head(new HazardPointer()) {}
+  ~HazardPointerList() {
+    // HazardPointerList destruct when program exit
+    HazardPointer* p = head.load(std::memory_order_relaxed);
+    while (p) {
+      HazardPointer* temp = p;
+      p = p->next;
+      delete temp;
+    }
+  }
+
+  std::atomic<HazardPointer*> head;
+};
+
+// If you have a large number of threads, consider increasing this number
+const int kHashTableSize = 37;
+// An simple Lock-free hash table used to speed up the check of whether
+// a pointer is hazard (void* => HazardPointer*)
+struct HazardPointerMap {
+  std::atomic<HazardPointer*> hashTable[kHashTableSize];
+  void Insert(void* ptr, HazardPointer* hazard_pointer) {
+
+  }
+
+  bool Find(void* ptr) {
+
+  }
+
+  void Delete() {
+
+  }
+};
+
+static HazardPointerList g_hazard_pointer_list;
+static HazardPointerMap g_hazard_pointer_map;
 
 class Reclaimer {
  public:
@@ -54,12 +87,15 @@ class Reclaimer {
 
   // Check if the ptr is hazard
   bool Hazard(void* const ptr) {
-    for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
-      // TODO:Try to optimize memory order
-      if (g_hazard_pointers[i].ptr.load(std::memory_order_seq_cst) == ptr) {
+    std::atomic<HazardPointer*>& head = g_hazard_pointer_list.head;
+    HazardPointer* p = head.load(std::memory_order_relaxed);
+    do {
+      if (p->ptr.load(std::memory_order_seq_cst) == ptr) {
         return true;
       }
-    }
+      p = p->next;
+    } while (p);
+
     return false;
   }
 
@@ -93,21 +129,36 @@ class Reclaimer {
 
  private:
   Reclaimer() : hazard_pointer_(nullptr) {
-    for (int i = 0; i < kEstimateHazardPointerCount; ++i) {
-      if (!g_hazard_pointers[i].flag.test_and_set()) {
-        hazard_pointer_ = &g_hazard_pointers[i];
-        assert(nullptr == hazard_pointer_->ptr);
+    std::atomic<HazardPointer*>& head = g_hazard_pointer_list.head;
+    HazardPointer* p = head.load(std::memory_order_acquire);
+    do {
+      // Try to get the idle hazard pointer
+      if (!p->flag.test_and_set()) {
+        hazard_pointer_ = p;
         break;
       }
+      p = p->next;
+    } while (p);
+
+    if (nullptr == hazard_pointer_) {
+      // No idle hazard pointer, allocate new one
+      HazardPointer* new_head = new HazardPointer();
+      new_head->flag.test_and_set();
+      hazard_pointer_ = new_head;
+      HazardPointer* old_head = head.load(std::memory_order_relaxed);
+      do {
+        new_head->next = old_head;
+      } while (!head.compare_exchange_weak(old_head, new_head,
+                                           std::memory_order_release,
+                                           std::memory_order_relaxed));
     }
 
-    // If assertion fired, you should increase kEstimateHazardPointerCount
     assert(nullptr != hazard_pointer_);
   }
 
   ~Reclaimer() {
     // The Reclaimer destruct when the thread exit
-    assert(nullptr == hazard_pointer_->ptr);
+    assert(nullptr == hazard_pointer_->ptr.load(std::memory_order_relaxed));
 
     // 1.Hand over the hazard pointer
     hazard_pointer_->flag.clear();
@@ -179,6 +230,7 @@ class Reclaimer {
   };
 
   HazardPointer* hazard_pointer_;
+  std::unordered_set<ReclaimNode*> reclaim_set;
   ReclaimList reclaim_list_;
   ReclaimPool reclaim_pool_;
 };

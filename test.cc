@@ -156,7 +156,7 @@ int main(int argc, char const* argv[]) {
   (void)argc;
   (void)argv;
 
-  std::cout << "Benchmark with " << MAX_THREADS << " hazard threads:"
+  std::cout << "Benchmark with 4 threads:"
             << "\n";
 
   int elements[] = {10000, 100000, 1000000};

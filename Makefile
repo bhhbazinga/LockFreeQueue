@@ -6,8 +6,6 @@ SRC = test.cc
 OBJ = $(SRC:.cc=.o)
 EXEC = test
 LBLIBS = -latomic -lpthread
-DEFS = -DMAX_THREADS=4
-CXXFLAGS += $(DEFS)
 
 all: $(EXEC)
 
