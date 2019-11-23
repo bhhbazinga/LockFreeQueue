@@ -8,7 +8,6 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 
 // A coefficient that used to calcuate the max number
 // of reclaim node in reclaim list
