@@ -4,7 +4,6 @@
 #include "reclaimer.h"
 
 #include <atomic>
-#include <memory>
 
 template <typename T>
 class LockFreeQueue {
