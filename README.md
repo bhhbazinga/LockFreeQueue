@@ -26,7 +26,7 @@ See also [test](test.cc).
 make && ./test
 ```
 ## API
-```
+```C++
 void Enqueue(const T& data);
 void Enqueue(T&& data);
 bool Dequeue(T& data);
