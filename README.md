@@ -1,5 +1,5 @@
 # LockFreeQueue
-A lightweight lock free queue implemented in c++11 based on hazard pointer.
+A lock free queue implemented in c++11 based on hazard pointer.
 ## Feature
   * C++11 implementation.
   * Thread-safe and Lock-free. 
