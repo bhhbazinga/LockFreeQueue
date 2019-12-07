@@ -162,7 +162,6 @@ class Reclaimer {
     // 2.Make sure reclaim all no hazard pointers
     for (auto it = reclaim_map_.begin(); it != reclaim_map_.end();) {
       // Wait until pointer is no hazard
-      // Maybe less efficient?
       while (Hazard(it->first)) {
         std::this_thread::yield();
       }
