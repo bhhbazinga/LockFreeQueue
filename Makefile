@@ -1,16 +1,17 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -pedantic -std=c++11 -g -O3
+CXXFLAGS = -Wall -Wextra -pedantic -std=c++2a -g -o3 -fsanitize=thread
 #-fsanitize=thread
 #-fsanitize=address -fsanitize=leak 
-SRC = test.cc
-OBJ = $(SRC:.cc=.o)
+
 EXEC = test
-LBLIBS = -latomic -lpthread
+LBLIBS = -lpthread
 
-all: $(EXEC)
+all : $(EXEC)
 
-$(EXEC): $(OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $(OBJ) $(LBLIBS)
+$(EXEC): test.cc lockfree_queue.h
+	$(CXX) $(CXXFLAGS) -o $(EXEC) test.cc $(LBLIBS)
+
+.Phony: clean
 
 clean:
-	rm -rf $(OBJ) $(EXEC)
+	rm -rf $(EXEC)

@@ -43,7 +43,7 @@ class LockFreeQueue {
   bool TryInsertNewTail(Node* old_tail, Node* new_tail) {
     Node* null_ptr = nullptr;
     if (old_tail->next.compare_exchange_strong(null_ptr, new_tail,
-                                               std::memory_order_relaxed,
+                                               std::memory_order_release,
                                                std::memory_order_relaxed)) {
       tail_.store(new_tail, std::memory_order_release);
       size_.fetch_add(1, std::memory_order_relaxed);
@@ -85,7 +85,7 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
     // Because we set the hazard pointer, so the old_tail can't be delete
     T* null_ptr = nullptr;
     if (old_tail->data.compare_exchange_strong(null_ptr, data_ptr,
-                                               std::memory_order_relaxed,
+                                               std::memory_order_release,
                                                std::memory_order_relaxed)) {
       if (!TryInsertNewTail(old_tail, new_tail)) {
         // Other help thread already insert tail
@@ -122,16 +122,16 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
       reclaimer.MarkHazard(nullptr);
       return false;
     }
-  } while (!head_.compare_exchange_strong(
-      old_head, old_head->next.load(std::memory_order_relaxed),
-      std::memory_order_relaxed, std::memory_order_relaxed));
+  } while (!head_.compare_exchange_weak(
+      old_head, old_head->next.load(std::memory_order_acquire),
+      std::memory_order_release, std::memory_order_relaxed));
   size_.fetch_sub(1, std::memory_order_relaxed);
 
   // So this thread is the only thread that can
   // delete old_head or push old_head to reclaim list
   reclaimer.MarkHazard(nullptr);
 
-  T* data_ptr = old_head->data.load(std::memory_order_relaxed);
+  T* data_ptr = old_head->data.load(std::memory_order_acquire);
   data = std::move(*data_ptr);
   delete data_ptr;
   reclaimer.ReclaimLater(old_head,

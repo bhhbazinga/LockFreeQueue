@@ -120,7 +120,6 @@ void TestConcurrentEnqueueAndDequeue() {
   start = false;
 }
 
-
 auto onDequeue_with_count = [](std::unordered_map<int, int>& element2count) {
   while (!start) {
     std::this_thread::yield();
@@ -148,8 +147,7 @@ void TestCorrectness() {
 
   std::vector<std::thread> enqueue_threads;
   for (int i = 0; i < kMaxThreads / 2; ++i) {
-    enqueue_threads.push_back(
-        std::thread(onEnqueue, kMaxThreads / 2));
+    enqueue_threads.push_back(std::thread(onEnqueue, kMaxThreads / 2));
   }
 
   std::vector<std::thread> dequeue_threads;
