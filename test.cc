@@ -179,7 +179,7 @@ int main(int argc, char const* argv[]) {
   (void)argc;
   (void)argv;
 
-  std::cout << "Benchmark with" << kMaxThreads <<" threads:"
+  std::cout << "Benchmark with " << kMaxThreads <<" threads:"
             << "\n";
 
   int elements[] = {10000, 100000, 1000000};
