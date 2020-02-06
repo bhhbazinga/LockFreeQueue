@@ -79,7 +79,7 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
     do {
       temp = old_tail;
       // Make sure the hazard pointer we set is tail
-      reclaimer.MarkHazard(old_tail);
+      reclaimer.MarkHazard(0, old_tail);
       old_tail = tail_.load(std::memory_order_acquire);
     } while (temp != old_tail);
     // Because we set the hazard pointer, so the old_tail can't be delete
@@ -91,7 +91,7 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
         // Other help thread already insert tail
         delete new_tail;
       }
-      reclaimer.MarkHazard(nullptr);
+      reclaimer.MarkHazard(0, nullptr);
       return;
     } else {
       // If CAS failed,
@@ -113,13 +113,13 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
     do {
       // Make sure the hazard pointer we set is head
       temp = old_head;
-      reclaimer.MarkHazard(old_head);
+      reclaimer.MarkHazard(0, old_head);
       old_head = head_.load(std::memory_order_relaxed);
     } while (temp != old_head);
     // Because we set the hazard pointer, so the old_head can't be delete
     if (tail_.load(std::memory_order_acquire) == old_head) {
       // Because old_head is dummy node, the queue is empty
-      reclaimer.MarkHazard(nullptr);
+      reclaimer.MarkHazard(0, nullptr);
       return false;
     }
   } while (!head_.compare_exchange_weak(
@@ -129,7 +129,7 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
 
   // So this thread is the only thread that can
   // delete old_head or push old_head to reclaim list
-  reclaimer.MarkHazard(nullptr);
+  reclaimer.MarkHazard(0, nullptr);
 
   T* data_ptr = old_head->data.load(std::memory_order_acquire);
   data = std::move(*data_ptr);

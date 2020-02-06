@@ -8,7 +8,7 @@ LBLIBS = -lpthread
 
 all : $(EXEC)
 
-$(EXEC): test.cc lockfree_queue.h
+$(EXEC): test.cc lockfree_queue.h reclaimer.h
 	$(CXX) $(CXXFLAGS) -o $(EXEC) test.cc $(LBLIBS)
 
 .Phony: clean
