@@ -3,7 +3,6 @@
 
 #include <atomic>
 #include <cassert>
-#include <cstdio>
 #include <functional>
 #include <thread>
 #include <unordered_map>
@@ -73,8 +72,13 @@ class Reclaimer {
   // as an hazard pointer pointer.
   void MarkHazard(int index, void* const ptr) {
     assert(index < kHarzardPointersPerThread);
-    // TODO:Try to degrade memory order?
-    hazard_pointers_[index]->ptr.store(ptr, std::memory_order_seq_cst);
+    hazard_pointers_[index]->ptr.store(ptr, std::memory_order_release);
+  }
+
+  // Get ptr that marked as hazard at the index of hazard_pointers_ array.
+  void* GetHazardPtr(int index) {
+    assert(index < kHarzardPointersPerThread);
+    return hazard_pointers_[index]->ptr.load(std::memory_order_acquire);
   }
 
   // Check if the ptr is hazard.
@@ -82,8 +86,7 @@ class Reclaimer {
     std::atomic<HazardPointer*>& head = g_hazard_pointer_list.head;
     HazardPointer* p = head.load(std::memory_order_acquire);
     do {
-      // TODO:Try to degrade memory order?
-      if (p->ptr.load(std::memory_order_seq_cst) == ptr) {
+      if (p->ptr.load(std::memory_order_acquire) == ptr) {
         return true;
       }
       p = p->next;
@@ -111,8 +114,7 @@ class Reclaimer {
     std::atomic<HazardPointer*>& head = g_hazard_pointer_list.head;
     HazardPointer* p = head.load(std::memory_order_acquire);
     do {
-      // TODO:Try to degrade memory order?
-      void* const ptr = p->ptr.load(std::memory_order_seq_cst);
+      void* const ptr = p->ptr.load(std::memory_order_acquire);
       if (nullptr != ptr) {
         not_allow_delete_set.insert(ptr);
       }
