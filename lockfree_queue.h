@@ -60,6 +60,9 @@ class LockFreeQueue {
   // Dequeue used in destructor
   bool Dequeue();
 
+  // Invoke this function when the node can be reclaimed
+  static void OnDeleteNode(void* ptr) { delete static_cast<Node*>(ptr); }
+
   struct Node {
     Node() : data(nullptr), next(nullptr) {}
     ~Node() {}
@@ -148,8 +151,7 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
   delete data_ptr;
 
   Reclaimer& reclaimer = Reclaimer::GetInstance();
-  reclaimer.ReclaimLater(old_head,
-                         [](void* p) { delete reinterpret_cast<Node*>(p); });
+  reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
   reclaimer.ReclaimNoHazardPointer();
   return true;
 }
@@ -163,8 +165,7 @@ bool LockFreeQueue<T>::Dequeue() {
   delete data_ptr;
 
   Reclaimer& reclaimer = Reclaimer::GetInstance();
-  reclaimer.ReclaimLater(old_head,
-                         [](void* p) { delete reinterpret_cast<Node*>(p); });
+  reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
   reclaimer.ReclaimNoHazardPointer();
   return true;
 }
