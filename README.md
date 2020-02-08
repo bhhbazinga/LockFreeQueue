@@ -1,11 +1,12 @@
 # LockFreeQueue
-A lock free queue implemented in c++11 based on hazard pointer.
+A lock free queue implemented in c++20 based on hazard pointer.
 ## Feature
-  * C++11 implementation.
+  * C++20 implementation.
   * Thread-safe and Lock-free. 
   * Hazard pointer.
+  * ABA safe.
   * Inter thread helping.
-  * Support Multi-producer & Multi-consumer
+  * Support Multi-producer & Multi-consumer.
   * No limitation of number of threads.
   * Dynamically allocate nodes(performance bottlneck). Or you can simply implement a thread-safe memory pool, e.g. by thread_local   storage identifier.
 ## Benchmark
