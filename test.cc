@@ -179,7 +179,7 @@ int main(int argc, char const* argv[]) {
   (void)argc;
   (void)argv;
 
-  std::cout << "Benchmark with " << kMaxThreads <<" threads:"
+  std::cout << "Benchmark with " << kMaxThreads << " threads:"
             << "\n";
 
   int elements[] = {10000, 100000, 1000000};
@@ -215,13 +215,12 @@ int main(int argc, char const* argv[]) {
               << "\n";
     avg = static_cast<float>(elements2timespan[maxElements][2]) / 10.0f;
     std::cout << maxElements
-              << " elements enqueue and dequeue concurrently, average timespan="
+              << " elements enqueue and dequeue concurrently, average timespan = "
               << avg << "ms"
               << "\n";
     std::cout << "\n";
   }
 
   TestCorrectness();
-
   return 0;
 }

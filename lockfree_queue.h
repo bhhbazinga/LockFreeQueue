@@ -7,6 +7,8 @@
 
 template <typename T>
 class LockFreeQueue {
+  static_assert(std::is_copy_constructible_v<T>, "T requires copy constructor");
+
  public:
   LockFreeQueue()
       : head_(new Node),
@@ -14,8 +16,7 @@ class LockFreeQueue {
         size_(0) {}
 
   ~LockFreeQueue() {
-    T data;
-    while (Dequeue(data))
+    while (Dequeue())
       ;
     delete head_.load(std::memory_order_relaxed);
   }
@@ -54,6 +55,10 @@ class LockFreeQueue {
   }
 
   void InternalEnqueue(T* data_ptr);
+  // Dequeue head
+  Node* InternalDequeue();
+  // Dequeue used in destructor
+  bool Dequeue();
 
   struct Node {
     Node() : data(nullptr), next(nullptr) {}
@@ -105,7 +110,7 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
 }
 
 template <typename T>
-bool LockFreeQueue<T>::Dequeue(T& data) {
+typename LockFreeQueue<T>::Node* LockFreeQueue<T>::InternalDequeue() {
   Reclaimer& reclaimer = Reclaimer::GetInstance();
   Node* old_head = head_.load(std::memory_order_relaxed);
   Node* temp;
@@ -120,7 +125,7 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
     if (tail_.load(std::memory_order_acquire) == old_head) {
       // Because old_head is dummy node, the queue is empty
       reclaimer.MarkHazard(0, nullptr);
-      return false;
+      return nullptr;
     }
   } while (!head_.compare_exchange_weak(
       old_head, old_head->next.load(std::memory_order_acquire),
@@ -130,10 +135,34 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
   // So this thread is the only thread that can
   // delete old_head or push old_head to reclaim list
   reclaimer.MarkHazard(0, nullptr);
+  return old_head;
+}
+
+template <typename T>
+bool LockFreeQueue<T>::Dequeue(T& data) {
+  Node* old_head = InternalDequeue();
+  if (!old_head) return false;
 
   T* data_ptr = old_head->data.load(std::memory_order_acquire);
   data = std::move(*data_ptr);
   delete data_ptr;
+
+  Reclaimer& reclaimer = Reclaimer::GetInstance();
+  reclaimer.ReclaimLater(old_head,
+                         [](void* p) { delete reinterpret_cast<Node*>(p); });
+  reclaimer.ReclaimNoHazardPointer();
+  return true;
+}
+
+template <typename T>
+bool LockFreeQueue<T>::Dequeue() {
+  Node* old_head = InternalDequeue();
+  if (!old_head) return false;
+
+  T* data_ptr = old_head->data.load(std::memory_order_acquire);
+  delete data_ptr;
+
+  Reclaimer& reclaimer = Reclaimer::GetInstance();
   reclaimer.ReclaimLater(old_head,
                          [](void* p) { delete reinterpret_cast<Node*>(p); });
   reclaimer.ReclaimNoHazardPointer();
