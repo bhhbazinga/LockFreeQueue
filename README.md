@@ -4,6 +4,7 @@ A lock free queue implemented in c++20 based on hazard pointer.
   * C++20 implementation.
   * Thread-safe and Lock-free. 
   * Hazard pointer.
+  * ABA safe.
   * Inter thread helping.
   * Support Multi-producer & Multi-consumer.
   * No limitation of number of threads.
