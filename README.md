@@ -1,5 +1,5 @@
 # LockFreeQueue
-A lock free queue implemented in c++20 based on hazard pointer.
+Lock Free Queue Based On Hazard Pointer.
 ## Feature
   * C++20 implementation.
   * Thread-safe and Lock-free. 
