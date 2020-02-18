@@ -1,9 +1,8 @@
 #ifndef LOCKFREE_QUEUE_H
 #define LOCKFREE_QUEUE_H
 
-#include "reclaimer.h"
-
 #include <atomic>
+#include "HazardPointer/reclaimer.h"
 
 template <typename T>
 class LockFreeQueue {
@@ -74,12 +73,13 @@ class LockFreeQueue {
   std::atomic<Node*> head_;
   std::atomic<Node*> tail_;
   std::atomic<size_t> size_;
+  HazardPointerList hazard_pointer_list_;
 };
 
 template <typename T>
 // std::unique_ptr<T>& new_data
 void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
-  Reclaimer& reclaimer = Reclaimer::GetInstance();
+  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
   Node* new_tail = new Node();
   Node* old_tail = tail_.load(std::memory_order_relaxed);
   Node* temp;
@@ -114,7 +114,7 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
 
 template <typename T>
 typename LockFreeQueue<T>::Node* LockFreeQueue<T>::InternalDequeue() {
-  Reclaimer& reclaimer = Reclaimer::GetInstance();
+  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
   Node* old_head = head_.load(std::memory_order_relaxed);
   Node* temp;
   do {
@@ -150,7 +150,7 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
   data = std::move(*data_ptr);
   delete data_ptr;
 
-  Reclaimer& reclaimer = Reclaimer::GetInstance();
+  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
   reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
   reclaimer.ReclaimNoHazardPointer();
   return true;
@@ -164,7 +164,7 @@ bool LockFreeQueue<T>::Dequeue() {
   T* data_ptr = old_head->data.load(std::memory_order_acquire);
   delete data_ptr;
 
-  Reclaimer& reclaimer = Reclaimer::GetInstance();
+  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
   reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
   reclaimer.ReclaimNoHazardPointer();
   return true;
