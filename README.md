@@ -1,7 +1,6 @@
 # LockFreeQueue
 Lock Free Queue Based On Hazard Pointer.
 ## Feature
-  * C++20 implementation.
   * Thread-safe and Lock-free. 
   * Hazard pointer.
   * ABA safe.
