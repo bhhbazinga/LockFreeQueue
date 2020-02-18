@@ -6,7 +6,7 @@ Lock Free Queue Based On Hazard Pointer.
   * ABA safe.
   * Inter thread helping.
   * Support Multi-producer & Multi-consumer.
-  * No limitation of number of threads.
+  * Dynamic size.  
   * Dynamically allocate nodes(performance bottlneck). Or you can simply implement a thread-safe memory pool, e.g. by thread_local   storage identifier.
 ## Benchmark
 
