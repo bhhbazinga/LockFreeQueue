@@ -8,8 +8,11 @@ LBLIBS = -lpthread
 
 all : $(EXEC)
 
-$(EXEC): test.cc lockfree_queue.h
+$(EXEC): test.cc lockfree_queue.h HazardPointer/reclaimer.h
 	$(CXX) $(CXXFLAGS) -o $(EXEC) test.cc $(LBLIBS)
+
+HazardPointer/reclaimer.h:
+	git submodule update --init --recursive --remote
 
 .Phony: clean
 

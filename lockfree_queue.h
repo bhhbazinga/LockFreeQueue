@@ -5,8 +5,12 @@
 #include "HazardPointer/reclaimer.h"
 
 template <typename T>
+class QueueReclaimer;
+
+template <typename T>
 class LockFreeQueue {
   static_assert(std::is_copy_constructible_v<T>, "T requires copy constructor");
+  friend QueueReclaimer<T>;
 
  public:
   LockFreeQueue()
@@ -73,21 +77,40 @@ class LockFreeQueue {
   std::atomic<Node*> head_;
   std::atomic<Node*> tail_;
   std::atomic<size_t> size_;
-  HazardPointerList hazard_pointer_list_;
+  static Reclaimer::HazardPointerList global_hp_list_;
 };
 
 template <typename T>
-// std::unique_ptr<T>& new_data
+Reclaimer::HazardPointerList LockFreeQueue<T>::global_hp_list_;
+
+template <typename T>
+class QueueReclaimer : public Reclaimer {
+  friend LockFreeQueue<T>;
+
+ private:
+  QueueReclaimer(HazardPointerList& hp_list) : Reclaimer(hp_list) {}
+  ~QueueReclaimer() override = default;
+
+  static QueueReclaimer<T>& GetInstance() {
+    thread_local static QueueReclaimer reclaimer(
+        LockFreeQueue<T>::global_hp_list_);
+    return reclaimer;
+  }
+};
+
+template <typename T>
 void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
-  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
+  QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
   Node* new_tail = new Node();
   Node* old_tail = tail_.load(std::memory_order_consume);
   Node* temp;
   for (;;) {
+    HazardPointer hp;
     do {
+      hp.UnMark();
       temp = old_tail;
       // Make sure the hazard pointer we set is tail
-      reclaimer.MarkHazard(0, old_tail);
+      hp = HazardPointer(&reclaimer, old_tail);
       old_tail = tail_.load(std::memory_order_consume);
     } while (temp != old_tail);
     // Because we set the hazard pointer, so the old_tail can't be delete
@@ -99,7 +122,6 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
         // Other help thread already insert tail
         delete new_tail;
       }
-      reclaimer.MarkHazard(0, nullptr);
       return;
     } else {
       // If CAS failed,
@@ -114,20 +136,21 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
 
 template <typename T>
 typename LockFreeQueue<T>::Node* LockFreeQueue<T>::InternalDequeue() {
-  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
+  QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
   Node* old_head = head_.load(std::memory_order_consume);
   Node* temp;
+  HazardPointer hp;
   do {
     do {
+      hp.UnMark();
       // Make sure the hazard pointer we set is head
       temp = old_head;
-      reclaimer.MarkHazard(0, old_head);
+      hp = HazardPointer(&reclaimer, old_head);
       old_head = head_.load(std::memory_order_consume);
     } while (temp != old_head);
     // Because we set the hazard pointer, so the old_head can't be delete
     if (tail_.load(std::memory_order_consume) == old_head) {
       // Because old_head is dummy node, the queue is empty
-      reclaimer.MarkHazard(0, nullptr);
       return nullptr;
     }
   } while (!head_.compare_exchange_weak(
@@ -135,9 +158,6 @@ typename LockFreeQueue<T>::Node* LockFreeQueue<T>::InternalDequeue() {
       std::memory_order_release, std::memory_order_relaxed));
   size_.fetch_sub(1, std::memory_order_release);
 
-  // So this thread is the only thread that can
-  // delete old_head or push old_head to reclaim list
-  reclaimer.MarkHazard(0, nullptr);
   return old_head;
 }
 
@@ -150,7 +170,7 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
   data = std::move(*data_ptr);
   delete data_ptr;
 
-  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
+  QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
   reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
   reclaimer.ReclaimNoHazardPointer();
   return true;
@@ -164,7 +184,7 @@ bool LockFreeQueue<T>::Dequeue() {
   T* data_ptr = old_head->data.load(std::memory_order_consume);
   delete data_ptr;
 
-  Reclaimer& reclaimer = Reclaimer::GetInstance(hazard_pointer_list_);
+  QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
   reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
   reclaimer.ReclaimNoHazardPointer();
   return true;

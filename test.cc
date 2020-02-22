@@ -175,6 +175,11 @@ void TestCorrectness() {
   }
 }
 
+const int elements1 = 10000;
+const int elements2 = 100000;
+const int elements3 = 1000000;
+
+
 int main(int argc, char const* argv[]) {
   (void)argc;
   (void)argv;
@@ -182,14 +187,14 @@ int main(int argc, char const* argv[]) {
   std::cout << "Benchmark with " << kMaxThreads << " threads:"
             << "\n";
 
-  int elements[] = {10000, 100000, 1000000};
+  int elements[] = {elements1, elements2, elements3};
   int timespan1[] = {0, 0, 0};
   int timespan2[] = {0, 0, 0};
   int timespan3[] = {0, 0, 0};
 
-  elements2timespan[10000] = timespan1;
-  elements2timespan[100000] = timespan2;
-  elements2timespan[1000000] = timespan3;
+  elements2timespan[elements1] = timespan1;
+  elements2timespan[elements2] = timespan2;
+  elements2timespan[elements3] = timespan3;
 
   for (int i = 0; i < 10; ++i) {
     for (int j = 0; j < 3; ++j) {
@@ -221,6 +226,6 @@ int main(int argc, char const* argv[]) {
     std::cout << "\n";
   }
 
-  TestCorrectness();
+  // TestCorrectness();
   return 0;
 }
