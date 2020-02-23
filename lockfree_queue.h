@@ -40,7 +40,7 @@ class LockFreeQueue {
   }
 
   bool Dequeue(T& data);
-  size_t size() const { return size_.load(std::memory_order_consume); }
+  size_t size() const { return size_.load(std::memory_order_relaxed); }
 
  private:
   struct Node;
@@ -50,7 +50,7 @@ class LockFreeQueue {
                                                std::memory_order_release,
                                                std::memory_order_relaxed)) {
       tail_.store(new_tail, std::memory_order_release);
-      size_.fetch_add(1, std::memory_order_release);
+      size_.fetch_add(1, std::memory_order_relaxed);
       return true;
     } else {
       return false;
@@ -59,9 +59,11 @@ class LockFreeQueue {
 
   void InternalEnqueue(T* data_ptr);
   // Dequeue head
-  Node* InternalDequeue();
+  Node* InternalDequeue(HazardPointer& hp);
   // Dequeue used in destructor
   bool Dequeue();
+  // Acquire head or tail and mark it as hazard
+  Node* AcquireSafeNode(std::atomic<Node*>& atomic_node, HazardPointer& hp);
 
   // Invoke this function when the node can be reclaimed
   static void OnDeleteNode(void* ptr) { delete static_cast<Node*>(ptr); }
@@ -99,21 +101,26 @@ class QueueReclaimer : public Reclaimer {
 };
 
 template <typename T>
-void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
+typename LockFreeQueue<T>::Node* LockFreeQueue<T>::AcquireSafeNode(
+    std::atomic<Node*>& atomic_node, HazardPointer& hp) {
   QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
-  Node* new_tail = new Node();
-  Node* old_tail = tail_.load(std::memory_order_consume);
+  Node* node = atomic_node.load(std::memory_order_consume);
   Node* temp;
+  do {
+    hp.UnMark();
+    temp = node;
+    hp = HazardPointer(&reclaimer, node);
+    node = atomic_node.load(std::memory_order_consume);
+  } while (temp != node);
+  return node;
+}
+
+template <typename T>
+void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
+  Node* new_tail = new Node();
   for (;;) {
     HazardPointer hp;
-    do {
-      hp.UnMark();
-      temp = old_tail;
-      // Make sure the hazard pointer we set is tail
-      hp = HazardPointer(&reclaimer, old_tail);
-      old_tail = tail_.load(std::memory_order_consume);
-    } while (temp != old_tail);
-    // Because we set the hazard pointer, so the old_tail can't be delete
+    Node* old_tail = AcquireSafeNode(tail_, hp);
     T* null_ptr = nullptr;
     if (old_tail->data.compare_exchange_strong(null_ptr, data_ptr,
                                                std::memory_order_release,
@@ -135,35 +142,27 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
 }
 
 template <typename T>
-typename LockFreeQueue<T>::Node* LockFreeQueue<T>::InternalDequeue() {
-  QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
-  Node* old_head = head_.load(std::memory_order_consume);
-  Node* temp;
-  HazardPointer hp;
+typename LockFreeQueue<T>::Node* LockFreeQueue<T>::InternalDequeue(
+    HazardPointer& hp) {
+  Node* old_head;
   do {
-    do {
-      hp.UnMark();
-      // Make sure the hazard pointer we set is head
-      temp = old_head;
-      hp = HazardPointer(&reclaimer, old_head);
-      old_head = head_.load(std::memory_order_consume);
-    } while (temp != old_head);
-    // Because we set the hazard pointer, so the old_head can't be delete
+    old_head = AcquireSafeNode(head_, hp);
     if (tail_.load(std::memory_order_consume) == old_head) {
       // Because old_head is dummy node, the queue is empty
       return nullptr;
     }
   } while (!head_.compare_exchange_weak(
-      old_head, old_head->next.load(std::memory_order_acquire),
+      old_head, old_head->next.load(std::memory_order_consume),
       std::memory_order_release, std::memory_order_relaxed));
-  size_.fetch_sub(1, std::memory_order_release);
+  size_.fetch_sub(1, std::memory_order_relaxed);
 
   return old_head;
 }
 
 template <typename T>
 bool LockFreeQueue<T>::Dequeue(T& data) {
-  Node* old_head = InternalDequeue();
+  HazardPointer hp;
+  Node* old_head = InternalDequeue(hp);
   if (!old_head) return false;
 
   T* data_ptr = old_head->data.load(std::memory_order_consume);
@@ -178,7 +177,8 @@ bool LockFreeQueue<T>::Dequeue(T& data) {
 
 template <typename T>
 bool LockFreeQueue<T>::Dequeue() {
-  Node* old_head = InternalDequeue();
+  HazardPointer hp;
+  Node* old_head = InternalDequeue(hp);
   if (!old_head) return false;
 
   T* data_ptr = old_head->data.load(std::memory_order_consume);
