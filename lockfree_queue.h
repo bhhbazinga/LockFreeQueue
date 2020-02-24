@@ -21,7 +21,7 @@ class LockFreeQueue {
   ~LockFreeQueue() {
     while (Dequeue())
       ;
-    delete head_.load(std::memory_order_consume);
+    delete head_.load(std::memory_order_relaxed);
   }
 
   LockFreeQueue(const LockFreeQueue&) = delete;
