@@ -30,6 +30,7 @@ make && ./test
 ```C++
 void Enqueue(const T& data);
 void Enqueue(T&& data);
+void Emplace(Args&&... args);
 bool Dequeue(T& data);
 size_t size() const;
 ```

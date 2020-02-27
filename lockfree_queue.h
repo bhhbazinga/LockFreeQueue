@@ -19,9 +19,12 @@ class LockFreeQueue {
         size_(0) {}
 
   ~LockFreeQueue() {
-    while (Dequeue())
-      ;
-    delete head_.load(std::memory_order_relaxed);
+    Node* p = head_.load(std::memory_order_relaxed);
+    while (p != nullptr) {
+      Node* tmp = p;
+      p = p->next.load(std::memory_order_relaxed);
+      delete tmp;
+    }
   }
 
   LockFreeQueue(const LockFreeQueue&) = delete;
@@ -29,15 +32,10 @@ class LockFreeQueue {
   LockFreeQueue& operator=(const LockFreeQueue& other) = delete;
   LockFreeQueue& operator=(LockFreeQueue&& other) = delete;
 
-  void Enqueue(const T& data) {
-    T* data_ptr = new T(data);
-    InternalEnqueue(data_ptr);
-  };
-
-  void Enqueue(T&& data) {
-    T* data_ptr = new T(std::move(data));
-    InternalEnqueue(data_ptr);
-  }
+  template <typename... Args>
+  void Emplace(Args&&... args);
+  void Enqueue(const T& data) { Emplace(data); };
+  void Enqueue(T&& data) { Emplace(std::forward<T>(data)); }
 
   bool Dequeue(T& data);
   size_t size() const { return size_.load(std::memory_order_relaxed); }
@@ -57,20 +55,17 @@ class LockFreeQueue {
     }
   }
 
-  void InternalEnqueue(T* data_ptr);
-  // Dequeue head
-  Node* InternalDequeue(HazardPointer& hp);
-  // Dequeue used in destructor
-  bool Dequeue();
   // Acquire head or tail and mark it as hazard
   Node* AcquireSafeNode(std::atomic<Node*>& atomic_node, HazardPointer& hp);
-
   // Invoke this function when the node can be reclaimed
   static void OnDeleteNode(void* ptr) { delete static_cast<Node*>(ptr); }
 
   struct Node {
     Node() : data(nullptr), next(nullptr) {}
-    ~Node() {}
+    ~Node() {
+      T* ptr = data.load(std::memory_order_relaxed);
+      if (ptr != nullptr) delete ptr;
+    }
 
     std::atomic<T*> data;
     std::atomic<Node*> next;
@@ -116,8 +111,10 @@ typename LockFreeQueue<T>::Node* LockFreeQueue<T>::AcquireSafeNode(
 }
 
 template <typename T>
-void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
+template <typename... Args>
+void LockFreeQueue<T>::Emplace(Args&&... args) {
   Node* new_tail = new Node();
+  T* data_ptr = new T(std::forward<Args>(args)...);
   for (;;) {
     HazardPointer hp;
     Node* old_tail = AcquireSafeNode(tail_, hp);
@@ -142,47 +139,22 @@ void LockFreeQueue<T>::InternalEnqueue(T* data_ptr) {
 }
 
 template <typename T>
-typename LockFreeQueue<T>::Node* LockFreeQueue<T>::InternalDequeue(
-    HazardPointer& hp) {
+bool LockFreeQueue<T>::Dequeue(T& data) {
+  HazardPointer hp;
   Node* old_head;
   do {
     old_head = AcquireSafeNode(head_, hp);
     if (tail_.load(std::memory_order_consume) == old_head) {
       // Because old_head is dummy node, the queue is empty
-      return nullptr;
+      return false;
     }
   } while (!head_.compare_exchange_weak(
       old_head, old_head->next.load(std::memory_order_consume),
       std::memory_order_release, std::memory_order_relaxed));
   size_.fetch_sub(1, std::memory_order_relaxed);
 
-  return old_head;
-}
-
-template <typename T>
-bool LockFreeQueue<T>::Dequeue(T& data) {
-  HazardPointer hp;
-  Node* old_head = InternalDequeue(hp);
-  if (!old_head) return false;
-
   T* data_ptr = old_head->data.load(std::memory_order_consume);
   data = std::move(*data_ptr);
-  delete data_ptr;
-
-  QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
-  reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
-  reclaimer.ReclaimNoHazardPointer();
-  return true;
-}
-
-template <typename T>
-bool LockFreeQueue<T>::Dequeue() {
-  HazardPointer hp;
-  Node* old_head = InternalDequeue(hp);
-  if (!old_head) return false;
-
-  T* data_ptr = old_head->data.load(std::memory_order_consume);
-  delete data_ptr;
 
   QueueReclaimer<T>& reclaimer = QueueReclaimer<T>::GetInstance();
   reclaimer.ReclaimLater(old_head, LockFreeQueue<T>::OnDeleteNode);
