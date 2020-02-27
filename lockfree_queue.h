@@ -19,10 +19,10 @@ class LockFreeQueue {
         size_(0) {}
 
   ~LockFreeQueue() {
-    Node* p = head_.load(std::memory_order_relaxed);
+    Node* p = head_.load(std::memory_order_consume);
     while (p != nullptr) {
       Node* tmp = p;
-      p = p->next.load(std::memory_order_relaxed);
+      p = p->next.load(std::memory_order_consume);
       delete tmp;
     }
   }
